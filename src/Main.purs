@@ -10,9 +10,11 @@ import DOM.HTML.Types (htmlDocumentToDocument)
 import DOM.HTML.Window (document)
 import DOM.Node.NonElementParentNode (getElementById)
 import DOM.Node.Types (ElementId(..), documentToNonElementParentNode)
+import Data.Argonaut.Core (Json, stringify)
 import Data.Maybe (fromJust)
 import Firebase (FIREBASE, Options, initializeApp)
 import Firebase.Authentication as FBA
+import Firebase.Database (onValue)
 import Partial.Unsafe (unsafePartial)
 import Prelude (Unit, bind, const, discard, pure, show, unit, void, ($), (<<<))
 import React (ComponentDidMount, Event, ReactClass, ReactElement, ReactSpec, ReactState, ReactThis, ReadWrite, Render, createClass, createFactory, readState, writeState)
@@ -30,8 +32,16 @@ firebaseOptions = {
   messagingSenderId: "399241446371"
 }
 
-initialState :: Boolean
-initialState = false
+type State =
+  { loggedIn :: Boolean
+  , predictions :: String
+  }
+
+initialState :: State
+initialState =
+  { loggedIn: false
+  , predictions: ""
+  }
 
 loginWithGoogle :: forall eff. Event -> Eff (firebase :: FIREBASE, console :: CONSOLE | eff) Unit
 loginWithGoogle e = do
@@ -62,13 +72,31 @@ spec'' state componentDidMount render =
   , componentWillUnmount: \_ -> pure unit
   }
 
+updateLoggedIn :: Boolean -> State ->  State
+updateLoggedIn b s = s { loggedIn = b }
+
+updatePredictions :: String -> State -> State
+updatePredictions ps s = s { predictions = ps }
+
 didMount :: forall props eff.
-  ReactThis props Boolean ->
-  Eff (firebase :: FIREBASE, state :: ReactState ReadWrite | eff) Unit
+  ReactThis props State ->
+  Eff (firebase :: FIREBASE, state :: ReactState ReadWrite, console :: CONSOLE | eff) Unit
 didMount ctx = do
+  state <- readState ctx
   FBA.onAuthStateChanged \loggedIn -> do
-    _ <- writeState ctx loggedIn
-    pure unit
+    _ <- writeState ctx (updateLoggedIn loggedIn state)
+    if loggedIn then
+      void $ onValue "predictions" (receivePredictions ctx)
+      else pure unit
+
+receivePredictions :: forall props eff. ReactThis props State -> Json
+  -> Eff (firebase :: FIREBASE, state :: ReactState ReadWrite, console :: CONSOLE | eff) Unit
+receivePredictions ctx j = do
+  state <- readState ctx
+  let predictions = stringify j
+  log predictions
+  _ <- writeState ctx (updatePredictions predictions state)
+  pure unit
 
 login :: Array ReactElement
 login =
@@ -77,20 +105,21 @@ login =
                      [ D.text "Login with google" ]
           ]
 
-cards :: Array ReactElement
-cards =
+cards :: String -> Array ReactElement
+cards predictions =
           [ D.h3' [ D.text "Calibrate me!" ]
           , D.button [ P.onClick logout ]
                      [ D.text "Logout" ]
+          , D.div' [D.text predictions]
           ]
 
 app :: forall props. ReactClass props
 app = createClass $ spec'' initialState didMount \ctx -> do
-  loggedIn <- readState ctx
+  { loggedIn, predictions } <- readState ctx
   log $ show loggedIn
   pure $
     D.div [ P.className "container" ]
-      if loggedIn then cards else login
+      if loggedIn then cards predictions else login
 
 main :: forall e. Eff (console :: CONSOLE, dom :: DOM, firebase :: FIREBASE | e) Unit
 main = void do
