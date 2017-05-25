@@ -2,7 +2,6 @@ module Main where
 
 import Control.Monad.Aff (runAff)
 import Control.Monad.Eff (Eff)
-import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Except (runExcept)
 import DOM (DOM)
@@ -25,8 +24,8 @@ import Firebase (FIREBASE, Options, initializeApp)
 import Firebase.Authentication as FBA
 import Firebase.Database (onValue, push)
 import Partial.Unsafe (unsafePartial)
-import Prelude (Unit, bind, const, discard, pure, show, unit, void, ($), (<<<), (<>))
-import React (ComponentDidMount, Event, ReactClass, ReactElement, ReactSpec, ReactState, ReactThis, ReadWrite, Render, createClass, createFactory, readState, transformState, writeState)
+import Prelude (Unit, bind, const, discard, pure, show, unit, void, ($), (<<<))
+import React (ComponentDidMount, Event, ReactClass, ReactElement, ReactSpec, ReactState, ReactThis, ReadWrite, Render, createClass, createFactory, readState, transformState)
 import React.DOM as D
 import React.DOM.Props as P
 import ReactDOM (render)
@@ -153,8 +152,7 @@ inputChanged :: forall props eff. ReactThis props State
   -> Eff (state :: ReactState ReadWrite | eff) Unit
 inputChanged ctx e =
   for_ (valueOf e) \s -> do
-    state <- readState ctx
-    writeState ctx (state { currentInput = s })
+    transformState ctx (\state -> state { currentInput = s })
 
 valueOf :: Event -> Either (NonEmptyList ForeignError) String
 valueOf e = runExcept do
