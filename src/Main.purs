@@ -92,11 +92,9 @@ initialState =
   }
 
 loginWithGoogle :: forall eff. Event -> Eff (firebase :: FIREBASE, console :: CONSOLE | eff) Unit
-loginWithGoogle e = do
+loginWithGoogle e = void do
   provider <- FBA.newGoogleProvider
-  _ <- runAff (log <<< show) (const $ pure unit) do
-    FBA.signInWithPopup provider
-  pure unit
+  runAff (log <<< show) (const $ pure unit) (FBA.signInWithPopup provider)
 
 logout :: forall eff. Event -> Eff (firebase :: FIREBASE | eff) Unit
 logout e = do
@@ -107,7 +105,7 @@ addNewItem :: forall props eff. ReactThis props State -> Event
 addNewItem ctx e = do
   {currentInput} <- readState ctx
   push "predictions" (encodeJson (Prediction {name: currentInput, correct: Unknown}))
-  void $ transformState ctx (\state -> state { currentInput = "" })
+  transformState ctx (\state -> state { currentInput = "" })
 
 spec'' :: forall props state eff.
   state -> ComponentDidMount props state eff -> Render props state eff -> ReactSpec props state eff
@@ -143,7 +141,7 @@ inputChanged :: forall props eff. ReactThis props State
   -> Event
   -> Eff (state :: ReactState ReadWrite | eff) Unit
 inputChanged ctx e =
-  for_ (valueOf e) \s -> do
+  for_ (valueOf e) \s ->
     transformState ctx (\state -> state { currentInput = s })
 
 valueOf :: Event -> Either (NonEmptyList ForeignError) String
