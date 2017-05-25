@@ -124,28 +124,20 @@ spec'' state componentDidMount render =
   , componentWillUnmount: \_ -> pure unit
   }
 
-updateLoggedIn :: Boolean -> State ->  State
-updateLoggedIn b s = s { loggedIn = b }
-
-updatePredictions :: String -> State -> State
-updatePredictions ps s = s { predictions = ps }
-
 didMount :: forall props eff.
   ReactThis props State ->
   Eff (firebase :: FIREBASE, state :: ReactState ReadWrite | eff) Unit
 didMount ctx = do
   FBA.onAuthStateChanged \loggedIn -> do
-    _ <- transformState ctx (updateLoggedIn loggedIn)
+    transformState ctx (\s -> s {loggedIn = loggedIn})
     if loggedIn then
       void $ onValue "predictions" (receivePredictions ctx)
       else pure unit
 
 receivePredictions :: forall props eff. ReactThis props State -> Json
   -> Eff (firebase :: FIREBASE, state :: ReactState ReadWrite | eff) Unit
-receivePredictions ctx j = do
-  let predictions = stringify j
-  _ <- transformState ctx (updatePredictions predictions)
-  pure unit
+receivePredictions ctx j =
+  transformState ctx (\s -> s {predictions = stringify j})
 
 inputChanged :: forall props eff. ReactThis props State
   -> Event
