@@ -24,11 +24,12 @@ import Firebase (FIREBASE, Options, initializeApp)
 import Firebase.Authentication as FBA
 import Firebase.Database (onValue, push)
 import Partial.Unsafe (unsafePartial)
-import Prelude (Unit, bind, const, discard, pure, show, unit, void, ($), (<<<))
+import Prelude (class Show, Unit, bind, const, discard, map, pure, show, unit, void, ($), (<<<))
 import React (ComponentDidMount, Event, ReactClass, ReactElement, ReactSpec, ReactState, ReactThis, ReadWrite, Render, createClass, createFactory, readState, transformState)
 import React.DOM as D
 import React.DOM.Props as P
 import ReactDOM (render)
+import Unsafe.Coerce (unsafeCoerce)
 
 firebaseOptions :: Options
 firebaseOptions = {
@@ -50,10 +51,16 @@ type Predictions = Array Prediction
 
 newtype Prediction = Prediction
   { name :: String
+  , probability :: Int
   , correct :: Correctness
   }
 
 data Correctness = Correct | Incorrect | Unknown
+
+instance showCorrectness :: Show Correctness where
+  show Correct = "Correct"
+  show Incorrect = "Incorrect"
+  show Unknown = "Unknown"
 
 instance decodeCorrectness :: DecodeJson Correctness where
   decodeJson json = do
@@ -70,8 +77,9 @@ instance decodePrediction :: DecodeJson Prediction where
   decodeJson json = do
     obj <- decodeJson json
     name <- obj .? "name"
+    probability <- obj .? "probability"
     correct <- obj .? "correct"
-    pure $ Prediction {name, correct}
+    pure $ Prediction {name, probability, correct}
 
 instance encodeCorrectness :: EncodeJson Correctness where
   encodeJson Correct = fromString "Correct"
@@ -81,11 +89,12 @@ instance encodeCorrectness :: EncodeJson Correctness where
 instance encodePrediction :: EncodeJson Prediction where
   encodeJson (Prediction prediction)
     = "name" := prediction.name
+    ~> "probability" := prediction.probability
     ~> "correct" := prediction.correct
     ~> jsonEmptyObject
 
 emptyPrediction :: Prediction
-emptyPrediction = Prediction {name: "", correct: Unknown}
+emptyPrediction = Prediction {name: "", probability: 50, correct: Unknown}
 
 initialState :: State
 initialState =
@@ -143,12 +152,35 @@ receivePredictions ctx j =
 updateName :: String -> Prediction -> Prediction
 updateName n (Prediction p) = Prediction $ p { name = n }
 
-inputChanged :: forall props eff. ReactThis props State
+updateProbability :: String -> Prediction -> Prediction
+updateProbability x (Prediction p) = Prediction $ p { probability = unsafeCoerce x }
+
+updateCorrectness :: String -> Prediction -> Prediction
+updateCorrectness x (Prediction p) = Prediction $ p { correct = fromString x }
+  where fromString :: String -> Correctness
+        fromString "Correct" = Correct
+        fromString "Incorrect" = Incorrect
+        fromString _ = Unknown
+
+type Handler = forall props eff
+  .  ReactThis props State
   -> Event
   -> Eff (state :: ReactState ReadWrite | eff) Unit
+
+inputChanged :: Handler
 inputChanged ctx e =
   for_ (valueOf e) \name ->
     transformState ctx (\state -> state { currentPrediction = updateName name state.currentPrediction })
+
+probabilityChanged :: Handler
+probabilityChanged ctx e =
+  for_ (valueOf e) \p ->
+    transformState ctx (\state -> state { currentPrediction = updateProbability p state.currentPrediction })
+
+correctnessChanged :: Handler
+correctnessChanged ctx e =
+  for_ (valueOf e) \c ->
+    transformState ctx (\state -> state { currentPrediction = updateCorrectness c state.currentPrediction })
 
 valueOf :: Event -> Either (NonEmptyList ForeignError) String
 valueOf e = runExcept do
@@ -163,12 +195,20 @@ login =
                      [ D.text "Login with google" ]
           ]
 
-cards :: forall props. ReactThis props State -> String -> String -> Array ReactElement
-cards ctx currentPrediction predictions =
+select :: forall a props. (Show a) => ReactThis props State -> String -> Array a -> Handler -> ReactElement
+select ctx current as h = D.select [ P.onChange (h ctx), P.value current ] $ map (option <<< show) as
+  where
+    option :: String -> ReactElement
+    option a = D.option [ P.value a ] [ D.text a ]
+
+cards :: forall props. ReactThis props State -> Prediction -> String -> Array ReactElement
+cards ctx (Prediction currentPrediction) predictions =
           [ D.h3' [ D.text "Calibrate me!" ]
           , D.button [ P.onClick logout ]
                      [ D.text "Logout" ]
-          , D.div' [ D.input [ P.onChange (inputChanged ctx), P.value currentPrediction ] []
+          , D.div' [ D.input [ P.onChange (inputChanged ctx), P.value currentPrediction.name ] []
+                   , select ctx (show currentPrediction.probability) [50, 70, 90] probabilityChanged
+                   , select ctx (show currentPrediction.correct) [Unknown, Correct, Incorrect] correctnessChanged
                    , D.button [ P.onClick (addNewItem ctx) ] [ D.text "add" ] ]
           , D.div' [ D.text predictions ]
           ]
@@ -176,10 +216,9 @@ cards ctx currentPrediction predictions =
 app :: forall props. ReactClass props
 app = createClass $ spec'' initialState didMount \ctx -> do
   { loggedIn, predictions, currentPrediction } <- readState ctx
-  let Prediction { name } = currentPrediction
   pure $
     D.div [ P.className "container" ]
-      if loggedIn then cards ctx name predictions else login
+      if loggedIn then cards ctx currentPrediction predictions else login
 
 main :: forall e. Eff (console :: CONSOLE, dom :: DOM, firebase :: FIREBASE | e) Unit
 main = void do
