@@ -43,7 +43,7 @@ firebaseOptions = {
 type State =
   { loggedIn :: Boolean
   , predictions :: String
-  , currentInput :: String
+  , currentPrediction :: Prediction
   }
 
 type Predictions = Array Prediction
@@ -84,11 +84,14 @@ instance encodePrediction :: EncodeJson Prediction where
     ~> "correct" := prediction.correct
     ~> jsonEmptyObject
 
+emptyPrediction :: Prediction
+emptyPrediction = Prediction {name: "", correct: Unknown}
+
 initialState :: State
 initialState =
   { loggedIn: false
   , predictions: ""
-  , currentInput: ""
+  , currentPrediction: emptyPrediction
   }
 
 loginWithGoogle :: forall eff. Event -> Eff (firebase :: FIREBASE, console :: CONSOLE | eff) Unit
@@ -103,9 +106,9 @@ logout e = do
 addNewItem :: forall props eff. ReactThis props State -> Event
   -> Eff (state :: ReactState ReadWrite, firebase :: FIREBASE | eff) Unit
 addNewItem ctx e = do
-  {currentInput} <- readState ctx
-  push "predictions" (encodeJson (Prediction {name: currentInput, correct: Unknown}))
-  transformState ctx (\state -> state { currentInput = "" })
+  {currentPrediction} <- readState ctx
+  push "predictions" (encodeJson currentPrediction)
+  transformState ctx (\state -> state { currentPrediction = emptyPrediction })
 
 spec'' :: forall props state eff.
   state -> ComponentDidMount props state eff -> Render props state eff -> ReactSpec props state eff
@@ -137,12 +140,15 @@ receivePredictions :: forall props eff. ReactThis props State -> Json
 receivePredictions ctx j =
   transformState ctx (\s -> s {predictions = stringify j})
 
+updateName :: String -> Prediction -> Prediction
+updateName n (Prediction p) = Prediction $ p { name = n }
+
 inputChanged :: forall props eff. ReactThis props State
   -> Event
   -> Eff (state :: ReactState ReadWrite | eff) Unit
 inputChanged ctx e =
-  for_ (valueOf e) \s ->
-    transformState ctx (\state -> state { currentInput = s })
+  for_ (valueOf e) \name ->
+    transformState ctx (\state -> state { currentPrediction = updateName name state.currentPrediction })
 
 valueOf :: Event -> Either (NonEmptyList ForeignError) String
 valueOf e = runExcept do
@@ -158,21 +164,22 @@ login =
           ]
 
 cards :: forall props. ReactThis props State -> String -> String -> Array ReactElement
-cards ctx currentInput predictions =
+cards ctx currentPrediction predictions =
           [ D.h3' [ D.text "Calibrate me!" ]
           , D.button [ P.onClick logout ]
                      [ D.text "Logout" ]
-          , D.div' [ D.input [ P.onChange (inputChanged ctx), P.value currentInput ] []
+          , D.div' [ D.input [ P.onChange (inputChanged ctx), P.value currentPrediction ] []
                    , D.button [ P.onClick (addNewItem ctx) ] [ D.text "add" ] ]
           , D.div' [ D.text predictions ]
           ]
 
 app :: forall props. ReactClass props
 app = createClass $ spec'' initialState didMount \ctx -> do
-  { loggedIn, predictions, currentInput } <- readState ctx
+  { loggedIn, predictions, currentPrediction } <- readState ctx
+  let Prediction { name } = currentPrediction
   pure $
     D.div [ P.className "container" ]
-      if loggedIn then cards ctx currentInput predictions else login
+      if loggedIn then cards ctx name predictions else login
 
 main :: forall e. Eff (console :: CONSOLE, dom :: DOM, firebase :: FIREBASE | e) Unit
 main = void do
