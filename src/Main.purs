@@ -18,6 +18,8 @@ import Data.Either (Either(..))
 import Data.Foldable (for_)
 import Data.Foreign (ForeignError, readString, toForeign)
 import Data.Foreign.Index (readProp)
+import Data.Generic.Rep (class Generic)
+import Data.Generic.Rep.Show (genericShow)
 import Data.List.NonEmpty (NonEmptyList)
 import Data.Maybe (fromJust)
 import Firebase (FIREBASE, Options, initializeApp)
@@ -57,10 +59,10 @@ newtype Prediction = Prediction
 
 data Correctness = Correct | Incorrect | Unknown
 
+derive instance genericCorrectness :: Generic Correctness _
+
 instance showCorrectness :: Show Correctness where
-  show Correct = "Correct"
-  show Incorrect = "Incorrect"
-  show Unknown = "Unknown"
+  show = genericShow
 
 instance decodeCorrectness :: DecodeJson Correctness where
   decodeJson json = do

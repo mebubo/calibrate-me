@@ -13,7 +13,8 @@
     "purescript-firebase-client": "../purescript-firebase-client#master",
     "purescript-react": "^3.0.0",
     "purescript-react-dom": "^3.0.0",
-    "purescript-argonaut": "^3.0.0"
+    "purescript-argonaut": "^3.0.0",
+    "purescript-generics-rep": "^5.0.0"
   },
   "devDependencies": {
     "purescript-psci-support": "^3.0.0"
