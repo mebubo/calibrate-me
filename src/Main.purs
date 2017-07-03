@@ -12,10 +12,10 @@ import DOM.Node.NonElementParentNode (getElementById)
 import DOM.Node.Types (ElementId(..), documentToNonElementParentNode)
 import Data.Either (Either)
 import Data.Foldable (for_)
-import Data.Foreign (Foreign, ForeignError, readString, toForeign)
-import Data.Foreign.Class (class Encode, decode, encode)
-import Data.Foreign.Generic (defaultOptions, encodeJSON, genericEncode)
-import Data.Foreign.Generic.Class (class GenericEncode)
+import Data.Foreign (Foreign, ForeignError, F, readString, toForeign)
+import Data.Foreign.Class (class Decode, class Encode, decode, encode)
+import Data.Foreign.Generic (defaultOptions, encodeJSON, genericDecode, genericEncode)
+import Data.Foreign.Generic.Class (class GenericDecode, class GenericEncode)
 import Data.Foreign.Index (readProp)
 import Data.Generic.Rep (class Generic)
 import Data.Generic.Rep.Show (genericShow)
@@ -44,7 +44,7 @@ firebaseOptions = {
 
 type State =
   { loggedIn :: Boolean
-  , predictions :: String
+  , predictions :: Array Prediction
   , currentPrediction :: Prediction
   }
 
@@ -73,13 +73,22 @@ instance encodePrediction :: Encode Prediction where
 instance encodeCorrectness :: Encode Correctness where
   encode = ge
 
+de :: forall a rep. Generic a rep => GenericDecode rep => Foreign -> F a
+de = genericDecode $ defaultOptions
+
+instance decodePrediction :: Decode Prediction where
+  decode = de
+
+instance decodeCorrectness :: Decode Correctness where
+  decode = de
+
 emptyPrediction :: Prediction
 emptyPrediction = Prediction {name: "", probability: 50, correct: Unknown}
 
 initialState :: State
 initialState =
   { loggedIn: false
-  , predictions: ""
+  , predictions: []
   , currentPrediction: emptyPrediction
   }
 
@@ -127,8 +136,10 @@ didMount ctx = do
 receivePredictions :: forall props eff. ReactThis props State -> Foreign
   -> Eff (firebase :: FIREBASE, state :: ReactState ReadWrite | eff) Unit
 receivePredictions ctx j =
-  transformState ctx (\s -> s {predictions = stringify j})
+  for_ (runExcept $ decode $ values j) \v ->
+    transformState ctx (\s -> s {predictions = v})
 
+foreign import values :: Foreign -> Foreign
 foreign import stringify :: forall a. a -> String
 
 updateName :: String -> Prediction -> Prediction
@@ -183,7 +194,7 @@ select ctx current as h = D.select [ P.onChange (h ctx), P.value current ] $ map
     option :: String -> ReactElement
     option a = D.option [ P.value a ] [ D.text a ]
 
-cards :: forall props. ReactThis props State -> Prediction -> String -> Array ReactElement
+cards :: forall props. ReactThis props State -> Prediction -> Array Prediction -> Array ReactElement
 cards ctx (Prediction currentPrediction) predictions =
           [ D.h3' [ D.text "Calibrate me!" ]
           , D.button [ P.onClick logout ]
@@ -192,8 +203,12 @@ cards ctx (Prediction currentPrediction) predictions =
                    , select ctx (show currentPrediction.probability) [50, 70, 90] probabilityChanged
                    , select ctx (show currentPrediction.correct) [Unknown, Correct, Incorrect] correctnessChanged
                    , D.button [ P.onClick (addNewItem ctx) ] [ D.text "add" ] ]
-          , D.div' [ D.text predictions ]
+          , D.text "predictions"
+          , D.div' $ map (prediction ctx) predictions
           ]
+
+prediction :: forall props. ReactThis props State -> Prediction -> ReactElement
+prediction ctx (Prediction p) = D.div' [ D.text "prediction", D.text p.name, D.text $ show p.probability, D.text $ show p.correct ]
 
 app :: forall props. ReactClass props
 app = createClass $ spec'' initialState didMount \ctx -> do
