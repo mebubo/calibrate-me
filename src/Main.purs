@@ -10,13 +10,12 @@ import DOM.HTML.Types (htmlDocumentToDocument)
 import DOM.HTML.Window (document)
 import DOM.Node.NonElementParentNode (getElementById)
 import DOM.Node.Types (ElementId(..), documentToNonElementParentNode)
-import Data.Argonaut (class DecodeJson, decodeJson, fromString, jsonEmptyObject, (.?), (:=), (~>))
-import Data.Argonaut.Core (Json, stringify)
-import Data.Argonaut.Encode (encodeJson)
-import Data.Argonaut.Encode.Class (class EncodeJson)
-import Data.Either (Either(..))
+import Data.Either (Either)
 import Data.Foldable (for_)
-import Data.Foreign (ForeignError, readString, toForeign)
+import Data.Foreign (Foreign, ForeignError, readString, toForeign)
+import Data.Foreign.Class (class Encode, decode, encode)
+import Data.Foreign.Generic (defaultOptions, encodeJSON, genericEncode)
+import Data.Foreign.Generic.Class (class GenericEncode)
 import Data.Foreign.Index (readProp)
 import Data.Generic.Rep (class Generic)
 import Data.Generic.Rep.Show (genericShow)
@@ -60,40 +59,19 @@ newtype Prediction = Prediction
 data Correctness = Correct | Incorrect | Unknown
 
 derive instance genericCorrectness :: Generic Correctness _
+derive instance genericPrediction :: Generic Prediction _
 
 instance showCorrectness :: Show Correctness where
   show = genericShow
 
-instance decodeCorrectness :: DecodeJson Correctness where
-  decodeJson json = do
-    str <- decodeJson json
-    decode str
-    where
-      decode :: String -> Either String Correctness
-      decode "Correct" = Right Correct
-      decode "Incorrect" = Right Incorrect
-      decode "Unknown" = Right Unknown
-      decode _ = Left "Unknown value"
+ge :: forall a rep. Generic a rep => GenericEncode rep => a -> Foreign
+ge = genericEncode $ defaultOptions
 
-instance decodePrediction :: DecodeJson Prediction where
-  decodeJson json = do
-    obj <- decodeJson json
-    name <- obj .? "name"
-    probability <- obj .? "probability"
-    correct <- obj .? "correct"
-    pure $ Prediction {name, probability, correct}
+instance encodePrediction :: Encode Prediction where
+  encode = ge
 
-instance encodeCorrectness :: EncodeJson Correctness where
-  encodeJson Correct = fromString "Correct"
-  encodeJson Incorrect = fromString "Incorrect"
-  encodeJson Unknown = fromString "Unknown"
-
-instance encodePrediction :: EncodeJson Prediction where
-  encodeJson (Prediction prediction)
-    = "name" := prediction.name
-    ~> "probability" := prediction.probability
-    ~> "correct" := prediction.correct
-    ~> jsonEmptyObject
+instance encodeCorrectness :: Encode Correctness where
+  encode = ge
 
 emptyPrediction :: Prediction
 emptyPrediction = Prediction {name: "", probability: 50, correct: Unknown}
@@ -118,7 +96,7 @@ addNewItem :: forall props eff. ReactThis props State -> Event
   -> Eff (state :: ReactState ReadWrite, firebase :: FIREBASE | eff) Unit
 addNewItem ctx e = do
   {currentPrediction} <- readState ctx
-  push "predictions" (encodeJson currentPrediction)
+  push "predictions" (encode currentPrediction)
   transformState ctx (\state -> state { currentPrediction = emptyPrediction })
 
 spec'' :: forall props state eff.
@@ -146,10 +124,12 @@ didMount ctx = do
       void $ onValue "predictions" (receivePredictions ctx)
       else pure unit
 
-receivePredictions :: forall props eff. ReactThis props State -> Json
+receivePredictions :: forall props eff. ReactThis props State -> Foreign
   -> Eff (firebase :: FIREBASE, state :: ReactState ReadWrite | eff) Unit
 receivePredictions ctx j =
   transformState ctx (\s -> s {predictions = stringify j})
+
+foreign import stringify :: forall a. a -> String
 
 updateName :: String -> Prediction -> Prediction
 updateName n (Prediction p) = Prediction $ p { name = n }
