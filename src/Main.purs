@@ -10,11 +10,11 @@ import DOM.HTML.Types (htmlDocumentToDocument)
 import DOM.HTML.Window (document)
 import DOM.Node.NonElementParentNode (getElementById)
 import DOM.Node.Types (ElementId(..), documentToNonElementParentNode)
-import Data.Either (Either)
+import Data.Either (Either(Left, Right))
 import Data.Foldable (for_)
 import Data.Foreign (Foreign, ForeignError, F, readString, toForeign)
 import Data.Foreign.Class (class Decode, class Encode, decode, encode)
-import Data.Foreign.Generic (defaultOptions, encodeJSON, genericDecode, genericEncode)
+import Data.Foreign.Generic (defaultOptions, genericDecode, genericEncode)
 import Data.Foreign.Generic.Class (class GenericDecode, class GenericEncode)
 import Data.Foreign.Index (readProp)
 import Data.Generic.Rep (class Generic)
@@ -135,8 +135,9 @@ didMount ctx = do
 
 receivePredictions :: forall props eff. ReactThis props State -> Foreign
   -> Eff (firebase :: FIREBASE, state :: ReactState ReadWrite | eff) Unit
-receivePredictions ctx j =
-  for_ (runExcept $ decode $ values j) \v ->
+receivePredictions ctx j = case runExcept $ decode $ values j of
+  Left x -> unsafeCoerce $ log <<< show $ x
+  Right v ->
     transformState ctx (\s -> s {predictions = v})
 
 foreign import values :: Foreign -> Foreign
