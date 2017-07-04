@@ -19,11 +19,14 @@ import Data.Foreign.Generic.Class (class GenericDecode, class GenericEncode)
 import Data.Foreign.Index (readProp)
 import Data.Generic.Rep (class Generic)
 import Data.Generic.Rep.Show (genericShow)
+import Data.Int (round)
 import Data.List.NonEmpty (NonEmptyList)
 import Data.Maybe (fromJust)
+import Debug.Trace (traceAnyA)
 import Firebase (FIREBASE, Options, initializeApp)
 import Firebase.Authentication as FBA
 import Firebase.Database (onValue, push)
+import Global (readFloat, readInt)
 import Partial.Unsafe (unsafePartial)
 import Prelude (class Show, Unit, bind, const, discard, map, pure, show, unit, void, ($), (<<<))
 import React (ComponentDidMount, Event, ReactClass, ReactElement, ReactSpec, ReactState, ReactThis, ReadWrite, Render, createClass, createFactory, readState, transformState)
@@ -106,7 +109,10 @@ addNewItem :: forall props eff. ReactThis props State -> Event
 addNewItem ctx e = do
   {currentPrediction} <- readState ctx
   push "predictions" (encode currentPrediction)
-  transformState ctx (\state -> state { currentPrediction = emptyPrediction })
+  transformState ctx (\state -> state { currentPrediction = resetPrediction state.currentPrediction })
+
+resetPrediction :: Prediction -> Prediction
+resetPrediction (Prediction p) = Prediction $ p { name = "" }
 
 spec'' :: forall props state eff.
   state -> ComponentDidMount props state eff -> Render props state eff -> ReactSpec props state eff
@@ -136,7 +142,7 @@ didMount ctx = do
 receivePredictions :: forall props eff. ReactThis props State -> Foreign
   -> Eff (firebase :: FIREBASE, state :: ReactState ReadWrite | eff) Unit
 receivePredictions ctx j = case runExcept $ decode $ values j of
-  Left x -> unsafeCoerce $ log <<< show $ x
+  Left x -> traceAnyA $ show x
   Right v ->
     transformState ctx (\s -> s {predictions = v})
 
@@ -147,7 +153,7 @@ updateName :: String -> Prediction -> Prediction
 updateName n (Prediction p) = Prediction $ p { name = n }
 
 updateProbability :: String -> Prediction -> Prediction
-updateProbability x (Prediction p) = Prediction $ p { probability = unsafeCoerce x }
+updateProbability x (Prediction p) = Prediction $ p { probability = round $ readFloat x }
 
 updateCorrectness :: String -> Prediction -> Prediction
 updateCorrectness x (Prediction p) = Prediction $ p { correct = fromString x }
